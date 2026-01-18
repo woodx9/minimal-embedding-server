@@ -2,6 +2,12 @@
 
 一个基于多进程架构的高性能 Embedding 服务器，专门为解决 CPU tokenizer 瓶颈和最大化 GPU 利用率而设计。
 
+**核心特性**：
+- 采用 Flash Attention 2.8.3 加速注意力计算
+- 多进程架构完全突破 Python GIL 限制
+- 专为 Embedding 场景优化的轻量级推理引擎
+- 智能动态 batch 聚合，最大化 GPU 吞吐
+
 ## 性能表现
 
 **压测对比（10 并发客户端，每批 20 个文本，每文本 1000 tokens）**
