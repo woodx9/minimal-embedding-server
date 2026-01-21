@@ -3,10 +3,10 @@
 一个基于多进程架构的高性能 Embedding 服务器，专门为解决 CPU tokenizer 瓶颈和最大化 GPU 利用率而设计。
 
 **核心特性**：
-- 采用 Flash Attention 2.8.3 加速注意力计算
-- 多进程架构完全突破 Python GIL 限制
-- 专为 Embedding 场景优化的轻量级推理引擎
-- 智能动态 batch 聚合，最大化 GPU 吞吐
+-  支持 Flash Attention 和 FlashInfer 加速注意力计算
+-  多进程架构完全突破 Python GIL 限制
+-  专为 Embedding 场景优化的轻量级推理引擎
+-  智能动态 batch 聚合，最大化 GPU 吞吐
 
 ## 性能表现
 
@@ -289,7 +289,7 @@ conda activate flashattn5
 
 安装脚本会自动完成：
 - 安装 PyTorch 2.4.1 (CUDA 12.1)
-- 下载 Flash Attention 2.8.3 (cu12 + torch2.4)
+- 下载并安装 Flash Attention 和 FlashInfer
 - 安装所有依赖包
 
 #### 3. 启动服务
@@ -316,7 +316,23 @@ wget https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash
 pip install flash_attn-2.8.3+cu12torch2.4cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
 ```
 
-#### 步骤 4: 安装其他依赖
+#### 步骤 4: 下载并安装 FlashInfer（可选）
+
+根据你的 CUDA 版本选择对应的包：
+
+
+**CUDA 12.9:**
+```bash
+wget https://github.com/flashinfer-ai/flashinfer/releases/download/v0.6.1/flashinfer_python-0.6.1-py3-none-any.whl
+wget https://github.com/flashinfer-ai/flashinfer/releases/download/v0.6.1/flashinfer_cubin-0.6.1-py3-none-any.whl
+wget https://github.com/flashinfer-ai/flashinfer/releases/download/v0.6.1/flashinfer_jit_cache-0.6.1+cu129-cp39-abi3-manylinux_2_28_x86_64.whl
+
+pip install flashinfer_python-0.6.1-py3-none-any.whl
+pip install flashinfer_cubin-0.6.1-py3-none-any.whl
+pip install flashinfer_jit_cache-0.6.1+cu129-cp39-abi3-manylinux_2_28_x86_64.whl
+```
+
+#### 步骤 5: 安装其他依赖
 ```bash
 pip install -r requirements.txt
 ```
@@ -329,7 +345,8 @@ pip install -r requirements.txt
 |------|------|------|
 | Python | 3.10 | 必须 |
 | PyTorch | 2.4.1 | CUDA 12.1 |
-| Flash Attention | 2.8.3 | 预编译包 |
+| Flash Attention | 2.8.3 | 支持 |
+| FlashInfer | 0.6.1 | 支持 |
 | Transformers | 最新兼容版 | 兼容 torch 2.4 |
 | FastAPI | 最新版 | Web 框架 |
 | Uvicorn | 最新版 | ASGI 服务器 |
@@ -341,6 +358,7 @@ pip install -r requirements.txt
 ```bash
 python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda.is_available()}')"
 python -c "import flash_attn; print(f'Flash Attention: {flash_attn.__version__}')"
+python -c "import flashinfer; print('FlashInfer: 0.6.1')"
 python -c "import transformers; print('Transformers OK')"
 python -c "import fastapi; print('FastAPI OK')"
 ```

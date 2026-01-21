@@ -3,8 +3,9 @@ from torch import nn
 from transformers import Qwen3Config
 
 from layers.activation import SiluAndMul
-from layers.attention import Attention
+from layers.flashattention import FlashAttention
 from layers.embed_head import VocabParallelEmbedding
+from layers.flashinfer import FlashInferAttention
 from layers.layernorm import RMSNorm
 from layers.linear import MergedColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from layers.rotary_embedding import get_rope
@@ -51,7 +52,7 @@ class Qwen3Attention(nn.Module):
             base=rope_theta,
             rope_scaling=rope_scaling,
         )
-        self.attn = Attention(
+        self.attn = FlashInferAttention(
             self.num_heads,
             self.head_dim,
             self.scaling,
