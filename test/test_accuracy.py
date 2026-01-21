@@ -4,6 +4,7 @@ from transformers import AutoConfig, AutoTokenizer, AutoModel
 import torch.nn.functional as F
 
 from models.qwen3 import Qwen3ForCausalLM
+from schemas.config import MSEConfig
 from ultils.loader import load_model
 from ultils.pool import last_token_pool
 
@@ -11,8 +12,10 @@ from ultils.pool import last_token_pool
 def test_accuracy_bf16():
      model_name = "Qwen/Qwen3-Embedding-0.6B"
      config = AutoConfig.from_pretrained(model_name)
-
-     model_runner = Qwen3ForCausalLM(config)
+     
+     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+     mse_config = MSEConfig(device=str(device), attn_backend="flashInfer")
+     model_runner = Qwen3ForCausalLM(config, mse_config)
 
      model_path = snapshot_download(model_name)
      load_model(model_runner, model_path)

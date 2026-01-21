@@ -3,12 +3,12 @@ from torch import nn
 from transformers import Qwen3Config
 
 from layers.activation import SiluAndMul
-from layers.flashattention import FlashAttention
 from layers.embed_head import VocabParallelEmbedding
-from layers.flashinfer import FlashInferAttention
+from layers.attention.base import create_attention
 from layers.layernorm import RMSNorm
 from layers.linear import MergedColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from layers.rotary_embedding import get_rope
+from schemas.config import MSEConfig
 
 
 class Qwen3Attention(nn.Module):
@@ -18,6 +18,7 @@ class Qwen3Attention(nn.Module):
         hidden_size: int,
         num_heads: int,
         num_kv_heads: int,
+        mse_config: MSEConfig,
         max_position: int = 4096 * 32,
         head_dim: int | None = None,
         rms_norm_eps: float = 1e-06,
@@ -32,6 +33,7 @@ class Qwen3Attention(nn.Module):
         self.q_size = self.num_heads * self.head_dim
         self.kv_size = self.num_kv_heads * self.head_dim
         self.scaling = self.head_dim**-0.5
+        self.mse_config = mse_config
 
         self.qkv_proj = QKVParallelLinear(
             hidden_size,
@@ -52,11 +54,14 @@ class Qwen3Attention(nn.Module):
             base=rope_theta,
             rope_scaling=rope_scaling,
         )
-        self.attn = FlashInferAttention(
+        # Use factory function to create attention based on config
+        self.attn = create_attention(
             self.num_heads,
             self.head_dim,
             self.scaling,
             self.num_kv_heads,
+            attn_backend=mse_config.attn_backend,
+            device=mse_config.device,
         )
         self.q_norm = RMSNorm(self.head_dim, eps=rms_norm_eps)
         self.k_norm = RMSNorm(self.head_dim, eps=rms_norm_eps)
@@ -87,8 +92,10 @@ class Qwen3MLP(nn.Module):
         hidden_size: int,
         intermediate_size: int,
         hidden_act: str,
+        mse_config: MSEConfig,
     ) -> None:
         super().__init__()
+        self.mse_config = mse_config
         self.gate_up_proj = MergedColumnParallelLinear(
             hidden_size,
             [intermediate_size] * 2,
@@ -114,12 +121,15 @@ class Qwen3DecoderLayer(nn.Module):
     def __init__(
         self,
         config: Qwen3Config,
+        mse_config: MSEConfig,
     ) -> None:
         super().__init__()
+        self.mse_config = mse_config
         self.self_attn = Qwen3Attention(
             hidden_size=config.hidden_size,
             num_heads=config.num_attention_heads,
             num_kv_heads=config.num_key_value_heads,
+            mse_config=mse_config,
             max_position=config.max_position_embeddings,
             rms_norm_eps=config.rms_norm_eps,
             qkv_bias=getattr(config, 'attention_bias', False),
@@ -131,6 +141,7 @@ class Qwen3DecoderLayer(nn.Module):
             hidden_size=config.hidden_size,
             intermediate_size=config.intermediate_size,
             hidden_act=config.hidden_act,
+            mse_config=mse_config,
         )
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
@@ -157,10 +168,12 @@ class Qwen3Model(nn.Module):
     def __init__(
         self,
         config: Qwen3Config,
+        mse_config: MSEConfig,
     ) -> None:
         super().__init__()
+        self.mse_config = mse_config
         self.embed_tokens = VocabParallelEmbedding(config.vocab_size, config.hidden_size)
-        self.layers = nn.ModuleList([Qwen3DecoderLayer(config) for _ in range(config.num_hidden_layers)])
+        self.layers = nn.ModuleList([Qwen3DecoderLayer(config, mse_config) for _ in range(config.num_hidden_layers)])
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
@@ -187,10 +200,14 @@ class Qwen3ForCausalLM(nn.Module):
 
     def __init__(
         self,
-        config: Qwen3Config
+        config: Qwen3Config,
+        mse_config: MSEConfig = None,
     ) -> None:
         super().__init__()
-        self.model = Qwen3Model(config)
+        if mse_config is None:
+            mse_config = MSEConfig()
+        self.mse_config = mse_config
+        self.model = Qwen3Model(config, mse_config)
 
     def forward(
         self,

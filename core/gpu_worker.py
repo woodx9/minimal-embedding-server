@@ -12,7 +12,7 @@ import threading
 from queue import Queue, Empty
 
 
-def gpu_worker_main(model_name, device, ready_queue, result_queue, max_tokens_per_batch, enable_monitoring):
+def gpu_worker_main(model_name, device, ready_queue, result_queue, max_tokens_per_batch, enable_monitoring, mse_config):
     """
     GPU Worker 进程入口
     负责：
@@ -24,7 +24,7 @@ def gpu_worker_main(model_name, device, ready_queue, result_queue, max_tokens_pe
     # 加载模型到GPU
     print(f"[GPUWorker] Loading model on {device}...")
     config = AutoConfig.from_pretrained(model_name)
-    model = Qwen3ForCausalLM(config).to(device).to(torch.bfloat16)
+    model = Qwen3ForCausalLM(config, mse_config).to(device).to(torch.bfloat16)
     model.eval()
     model_path = snapshot_download(model_name)
     load_model(model, model_path)

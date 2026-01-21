@@ -1,5 +1,6 @@
 import torch
 from schemas import http
+from schemas.config import MSEConfig
 import threading
 import asyncio
 from queue import Empty
@@ -81,6 +82,7 @@ class Engine:
           
           print("[Engine] Starting GPU Worker Process...")
           # 启动 GPU Worker 进程（GPU密集型）
+          mse_config = MSEConfig(device=str(self._device), attn_backend="flashInfer")
           self._inference_process = Process(
               target=gpu_worker_main,
               args=(
@@ -89,7 +91,8 @@ class Engine:
                   self._ready_inference_queue,
                   self._result_queue,
                   self._max_tokens_per_batch,
-                  self._enable_monitoring
+                  self._enable_monitoring,
+                  mse_config
               ),
               daemon=True,
               name="GPUWorker"

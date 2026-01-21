@@ -1,6 +1,7 @@
 from flashinfer import BatchPrefillWithRaggedKVCacheWrapper
 import torch
 from torch import nn
+from layers.attention.base import BaseAttention
 
 # 全局 workspace buffer，只创建一次，所有层共享
 global_workspace_buffer = None
@@ -16,22 +17,24 @@ def get_global_workspace_buffer(workspace_size=16 * 1024 * 1024, device="cuda"):
         )
     return global_workspace_buffer
 
-class FlashInferAttention(nn.Module):
-    def __init__(self, num_heads,
+
+class FlashInferAttention(BaseAttention):
+    def __init__(
+        self, 
+        num_heads,
         head_dim,
         scale,
-        num_kv_heads):
-        super().__init__()
-        self.num_heads = num_heads
-        self.num_kv_heads = num_kv_heads
-        self.head_dim = head_dim
-        self.scale = scale
+        num_kv_heads,
+        device="cuda:0"
+    ):
+        super().__init__(num_heads, head_dim, scale, num_kv_heads)
+        self.device = device
         self.workspace_size = 512 * 1024 * 1024
 
         # 使用全局共享的 workspace buffer
         self.workspace_buffer = get_global_workspace_buffer(
             self.workspace_size,
-            "cuda:1"
+            self.device
         )
         
         # 创建 wrapper（推荐在初始化时创建，避免重复创建开销）
@@ -53,7 +56,7 @@ class FlashInferAttention(nn.Module):
         k = k.view(-1, self.num_kv_heads, self.head_dim)
         v = v.view(-1, self.num_kv_heads, self.head_dim)
         
-        # 计算序列边界（与你原来的逻辑相同）
+        # 计算序列边界
         seq_boundaries = [0]
         if len(positions) > 1:
             jumps = (positions[1:] != positions[:-1] + 1).nonzero(as_tuple=True)[0]

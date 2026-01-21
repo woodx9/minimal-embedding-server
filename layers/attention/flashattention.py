@@ -1,9 +1,10 @@
 import torch
 from torch import nn
 from flash_attn import flash_attn_varlen_func
+from layers.attention.base import BaseAttention
 
 
-class FlashAttention(nn.Module):
+class FlashAttention(BaseAttention):
 
     def __init__(
         self,
@@ -12,11 +13,7 @@ class FlashAttention(nn.Module):
         scale,
         num_kv_heads,
     ):
-        super().__init__()
-        self.num_heads = num_heads
-        self.head_dim = head_dim
-        self.scale = scale
-        self.num_kv_heads = num_kv_heads
+        super().__init__(num_heads, head_dim, scale, num_kv_heads)
         self.k_cache = self.v_cache = torch.tensor([])
 
     def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, positions: torch.Tensor):
