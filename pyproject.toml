@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mes"
+version = "0.1.0"
+description = "高性能多进程 Embedding 推理框架"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [{name = "woodx9"}]
+
+[project.scripts]
+mes = "openai_server.fast_api:start_server"

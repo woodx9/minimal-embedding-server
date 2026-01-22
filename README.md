@@ -1,4 +1,4 @@
-# Minimal Embedding Server - 高性能多进程推理框架
+# Minimal Embedding Server (MES) - 高性能多进程推理框架
 
 一个基于多进程架构的高性能 Embedding 服务器，专门为解决 CPU tokenizer 瓶颈和最大化 GPU 利用率而设计。
 
@@ -7,6 +7,66 @@
 -  多进程架构完全突破 Python GIL 限制
 -  专为 Embedding 场景优化的轻量级推理引擎
 -  智能动态 batch 聚合，最大化 GPU 吞吐
+
+> **注意**：当前版本仅支持 **Qwen3 Embedding** 系列模型（如 `Qwen/Qwen3-Embedding-0.6B`）
+
+## 快速开始
+
+### 安装
+
+```bash
+# 克隆仓库
+git clone https://github.com/woodx9/minimal-embedding-server.git
+cd minimal-embedding-server
+
+pip install -e .
+```
+
+> **注意**：安装过程会自动下载并安装：
+> - PyTorch 2.4.1 (CUDA 12.1)
+> - Flash Attention 2.8.3
+> - FlashInfer 0.6.1
+> - 其他依赖包
+
+### 使用方式
+
+#### 方式 1: 命令行启动（推荐）
+
+```bash
+# 基本启动（默认使用 flash_attention）
+mes
+
+# 指定端口和注意力后端
+mes --port 8000 --attn-backend flash_attention
+
+# 查看更多选项
+mes --help
+```
+
+**命令行参数：**
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--host` | `0.0.0.0` | 服务器监听地址 |
+| `--port` | `8000` | 服务器监听端口 |
+| `--attn-backend` | `flash_attention` | 注意力后端（flash_attention/flash_infer） |
+
+
+### 测试 API
+
+```bash
+# 健康检查
+curl http://localhost:8000/health
+
+# 获取 embeddings
+curl -X POST http://localhost:8000/v1/embeddings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen/Qwen3-Embedding-0.6B",
+    "input": ["你好，世界！", "Hello, world!"]
+  }'
+
+```
 
 ## 性能表现
 
@@ -19,8 +79,8 @@
 
 **测试命令**：
 ```bash
-cd benchmark
-python3 stress_test.py \
+
+python3  benchmark/stress_test.py \
     --concurrent-clients 10 \
     --batch-size 20 \
     --token-length 1000 \
@@ -31,7 +91,7 @@ python3 stress_test.py \
 > 测试脚本和部署脚本位于 `benchmark/` 目录下：
 > - `stress_test.py` - 性能压测脚本
 > - `vllm.sh` - vLLM 部署脚本
-> - `compare_transformers.py` - 精度对比脚本
+> - `compare_transformers.py` - 对比 transformer 速度脚本
 
 **为什么更快？**
 
@@ -68,7 +128,7 @@ python3 stress_test.py \
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      Engine (主协调器)                           │
-│  - 创建 MPQueue 进行进程间通信                                    │
+│  - 创建 MPQueue 进行进程间通信                                     │
 │  - 启动 Tokenizer Manager 进程                                   │
 │  - 启动 GPU Worker 进程                                          │
 │  - 结果分发线程（Result Dispatcher）                              │
@@ -79,11 +139,11 @@ python3 stress_test.py \
 │  Tokenizer Manager 进程   │      │      GPU Worker 进程          │
 │  (CPU 密集型)             │      │      (GPU 密集型)             │
 ├──────────────────────────┤      ├──────────────────────────────┤
-│ • 10 个 Tokenizer 线程    │      │ • 模型加载到 GPU              │
+│ • 10 个 Tokenizer 线程    │      │ • 模型加载到 GPU               │
 │ • 1 个 Batch Prepare 线程 │──────▶│ • 1 个 Inference 线程        │
-│ • CPU 上完成所有 tokenize │      │ • 4 个 Callback 线程          │
-│ • 动态 batch 聚合         │      │ • 向量化后处理                │
-│ • numpy 序列化传输        │      │ • 批量归一化                  │
+│ • CPU 上完成所有 tokenize  │      │ • 4 个 Callback 线程          │
+│ • 动态 batch 聚合          │      │ • 向量化后处理                │
+│ • numpy 序列化传输         │      │ • 批量归一化                  │
 └──────────────────────────┘      └──────────────────────────────┘
 ```
 
@@ -272,229 +332,6 @@ while total_tokens < 120000 and wait_rounds < max_wait_rounds:
 ---
 
 
-## 安装指南
-
-### 快速安装
-
-#### 1. 创建 Conda 环境
-```bash
-conda create -n flashattn5 python=3.10
-conda activate flashattn5
-```
-
-#### 2. 运行安装脚本
-```bash
-./build.sh
-```
-
-安装脚本会自动完成：
-- 安装 PyTorch 2.4.1 (CUDA 12.1)
-- 下载并安装 Flash Attention 和 FlashInfer
-- 安装所有依赖包
-
-#### 3. 启动服务
-```bash
-uvicorn openai_server.fast_api:app --host 0.0.0.0 --port 8000
-```
-
----
-
-### 手动安装（如果脚本失败）
-
-#### 步骤 1: 安装 PyTorch
-```bash
-pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu121
-```
-
-#### 步骤 2: 下载 Flash Attention
-```bash
-wget https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.4cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
-```
-
-#### 步骤 3: 安装 Flash Attention
-```bash
-pip install flash_attn-2.8.3+cu12torch2.4cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
-```
-
-#### 步骤 4: 下载并安装 FlashInfer（可选）
-
-根据你的 CUDA 版本选择对应的包：
-
-
-**CUDA 12.9:**
-```bash
-wget https://github.com/flashinfer-ai/flashinfer/releases/download/v0.6.1/flashinfer_python-0.6.1-py3-none-any.whl
-wget https://github.com/flashinfer-ai/flashinfer/releases/download/v0.6.1/flashinfer_cubin-0.6.1-py3-none-any.whl
-wget https://github.com/flashinfer-ai/flashinfer/releases/download/v0.6.1/flashinfer_jit_cache-0.6.1+cu129-cp39-abi3-manylinux_2_28_x86_64.whl
-
-pip install flashinfer_python-0.6.1-py3-none-any.whl
-pip install flashinfer_cubin-0.6.1-py3-none-any.whl
-pip install flashinfer_jit_cache-0.6.1+cu129-cp39-abi3-manylinux_2_28_x86_64.whl
-```
-
-#### 步骤 5: 安装其他依赖
-```bash
-pip install -r requirements.txt
-```
-
----
-
-### 版本说明
-
-| 组件 | 版本 | 说明 |
-|------|------|------|
-| Python | 3.10 | 必须 |
-| PyTorch | 2.4.1 | CUDA 12.1 |
-| Flash Attention | 2.8.3 | 支持 |
-| FlashInfer | 0.6.1 | 支持 |
-| Transformers | 最新兼容版 | 兼容 torch 2.4 |
-| FastAPI | 最新版 | Web 框架 |
-| Uvicorn | 最新版 | ASGI 服务器 |
-
----
-
-### 验证安装
-
-```bash
-python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda.is_available()}')"
-python -c "import flash_attn; print(f'Flash Attention: {flash_attn.__version__}')"
-python -c "import flashinfer; print('FlashInfer: 0.6.1')"
-python -c "import transformers; print('Transformers OK')"
-python -c "import fastapi; print('FastAPI OK')"
-```
-
----
-
-### 故障排查
-
-#### 问题 1: Flash Attention 下载失败
-**解决方案**: 手动从 GitHub Release 下载
-```bash
-# 使用代理或镜像
-export https_proxy=http://your-proxy:port
-wget https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.4cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
-```
-
-#### 问题 2: CUDA 版本不匹配
-**解决方案**: 检查 CUDA 版本
-```bash
-nvidia-smi  # 查看系统 CUDA 版本
-nvcc --version  # 查看 CUDA toolkit 版本
-```
-
-如果系统 CUDA 不是 12.1，需要：
-- 安装对应版本的 PyTorch
-- 下载对应版本的 Flash Attention
-
-#### 问题 3: Python 版本错误
-**解决方案**: 确保使用 Python 3.10
-```bash
-python --version  # 必须是 3.10.x
-conda create -n flashattn5 python=3.10  # 重新创建环境
-```
-
----
-
-### 其他 Flash Attention 版本
-
-如果需要其他版本，访问：
-https://github.com/Dao-AILab/flash-attention/releases
-
-选择适合你的：
-- CUDA 版本 (cu118, cu121, etc.)
-- PyTorch 版本 (torch2.0, torch2.1, torch2.2, etc.)
-- Python 版本 (cp310, cp311, etc.)
-
----
-
-## 快速开始
-
-### 启动服务
-```bash
-uvicorn openai_server.fast_api:app --host 0.0.0.0 --port 8000
-```
-
-### 测试请求
-```bash
-curl -X POST http://localhost:8000/v1/embeddings \
-  -H "Content-Type: application/json" \
-  -d '{"input": ["Hello world", "How are you"], "model": "Qwen3-Embedding-0.6B"}'
-```
-
----
-
-## 项目结构
-
-```
-minimal-embedding-server/
-├── core/
-│   ├── engine.py              # 主协调器（Engine 类）
-│   ├── tokenizer_manager.py   # CPU 密集型 Tokenizer 进程
-│   ├── gpu_worker.py          # GPU 密集型推理进程
-│   └── scheduler.py
-├── models/
-│   └── qwen3.py               # Qwen3 模型定义
-├── layers/
-│   ├── attention.py
-│   ├── linear.py
-│   └── rotary_embedding.py
-├── ultils/
-│   ├── loader.py              # 模型加载
-│   └── pool.py
-├── schemas/
-│   └── http.py                # API 数据模型
-├── open_server/
-│   └── fast_api.py            # FastAPI 服务器
-└── test/
-    └── test_accuracy.py
-```
-
----
-
-## 设计理念
-
-### 为什么选择多进程而不是多线程？
-
-1. **GIL 限制**：Python 的 GIL 导致多线程无法真正并行执行 CPU 密集型任务
-2. **资源隔离**：进程级别隔离，tokenizer 不会影响 GPU 推理
-3. **可扩展性**：未来可以轻松扩展到多机器分布式架构
-
-### 为什么需要向量化后处理？
-
-传统的循环式 embedding 提取每次都会触发 GPU 同步，而 GPU 同步是非常昂贵的操作（~1ms/次）。通过向量化：
-- 将 N 次 GPU 同步减少到 1 次
-- 利用 PyTorch 的向量化算子（更快）
-- 后处理时间从 100ms 降低到 5ms
-
-### 为什么使用动态 Batch 聚合？
-
-- **低延迟优先**：请求少时快速响应
-- **高吞吐优先**：请求多时聚合成大 batch
-- **自适应调整**：根据实时负载动态调整策略
-
----
-
-## 监控日志示例
-
-```
-[TokenizerManager] Loaded tokenizer, starting 10 tokenizer threads...
-[GPUWorker] Loading model on cuda:1...
-[GPUWorker] Model loaded successfully on cuda:1
-[Engine] All processes started successfully
-
-[BatchPrepare-0] Batch:5 TotalTokens:8192 AvgTokens:1638 Collect:45.23ms Merge:2.15ms Total:47.38ms ready:2
-[Inference] Requests:5 TotalTokens:8192 Wait:1.23ms Transfer:3.45ms Infer:15.67ms Post:4.89ms Callback:0.12ms Total:25.36ms ready:1
-```
-
----
-
-## 注意事项
-
-1. **内存管理**：每个进程独立加载模型，需要足够的 GPU 显存
-2. **进程启动时间**：首次启动需要加载模型（~5-10 秒）
-3. **队列大小**：根据实际负载调整 `MPQueue(maxsize=...)`
-
----
 
 ## 许可证
 

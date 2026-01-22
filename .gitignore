@@ -4,3 +4,10 @@ __pycache__/
 *.pyo
 *.pyd
 .pytest_cache/
+
+# Build and distribution
+*.egg-info/
+*.dist-info/
+dist/
+build/
+*.whl

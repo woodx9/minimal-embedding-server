@@ -49,12 +49,13 @@ class Engine:
                cls._instance = super().__new__(cls)
           return cls._instance
 
-     def __init__(self):
+     def __init__(self, attn_backend="flashattention"):
           if self._has_init:
                return
           self._has_init = True
           self._model_name = "Qwen/Qwen3-Embedding-0.6B"
           self._device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+          self._attn_backend = attn_backend  # 保存 attn_backend 参数
           
           # 创建多进程队列
           self._raw_request_queue = MPQueue(maxsize=1000)
@@ -80,9 +81,9 @@ class Engine:
           )
           self._prepare_process.start()
           
-          print("[Engine] Starting GPU Worker Process...")
-          # 启动 GPU Worker 进程（GPU密集型）
-          mse_config = MSEConfig(device=str(self._device), attn_backend="flashInfer")
+          print(f"[Engine] Starting GPU Worker Process (attn_backend={self._attn_backend})...")
+          # 根据 attn_backend 参数设置配置
+          mse_config = MSEConfig(device=str(self._device), attn_backend=self._attn_backend)
           self._inference_process = Process(
               target=gpu_worker_main,
               args=(
