@@ -3,19 +3,28 @@ import torch
 from torch import nn
 from layers.attention.base import BaseAttention
 
-# 全局 workspace buffer，只创建一次，所有层共享
-global_workspace_buffer = None
+# 全局 workspace buffer，每个 device 只创建一次，所有层共享
+global_workspace_buffers = {}
 
-def get_global_workspace_buffer(workspace_size=16 * 1024 * 1024, device="cuda"):
+
+def _default_device():
+    if torch.cuda.is_available():
+        return torch.device("cuda", torch.cuda.current_device())
+    return torch.device("cpu")
+
+
+def get_global_workspace_buffer(workspace_size=16 * 1024 * 1024, device=None):
     """获取全局 workspace buffer，如果不存在则创建"""
-    global global_workspace_buffer
-    if global_workspace_buffer is None:
-        global_workspace_buffer = torch.empty(
-            workspace_size, 
-            dtype=torch.int64, 
-            device=device
+    global global_workspace_buffers
+    device = device or _default_device()
+    device_key = str(device)
+    if device_key not in global_workspace_buffers:
+        global_workspace_buffers[device_key] = torch.empty(
+            workspace_size,
+            dtype=torch.int64,
+            device=device,
         )
-    return global_workspace_buffer
+    return global_workspace_buffers[device_key]
 
 
 class FlashInferAttention(BaseAttention):
@@ -25,10 +34,9 @@ class FlashInferAttention(BaseAttention):
         head_dim,
         scale,
         num_kv_heads,
-        device="cuda:0"
     ):
         super().__init__(num_heads, head_dim, scale, num_kv_heads)
-        self.device = device
+        self.device = _default_device()
         self.workspace_size = 512 * 1024 * 1024
 
         # 使用全局共享的 workspace buffer

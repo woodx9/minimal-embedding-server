@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from transformers import Qwen3Config
+import torch.distributed as dist
 
 from layers.activation import SiluAndMul
 from layers.embed_head import VocabParallelEmbedding
@@ -27,9 +28,15 @@ class Qwen3Attention(nn.Module):
         rope_scaling: tuple | None = None,
     ) -> None:
         super().__init__()
-        self.num_heads = num_heads
-        self.num_kv_heads = num_kv_heads
-        self.head_dim = head_dim or hidden_size // self.num_heads
+        tp_size = dist.get_world_size()
+        self.total_num_heads = num_heads
+        assert self.total_num_heads % tp_size == 0
+        self.num_heads = self.total_num_heads // tp_size
+        self.total_num_kv_heads = num_kv_heads
+        assert self.total_num_kv_heads % tp_size == 0
+        self.num_kv_heads = self.total_num_kv_heads // tp_size
+
+        self.head_dim = head_dim or hidden_size // self.total_num_heads
         self.q_size = self.num_heads * self.head_dim
         self.kv_size = self.num_kv_heads * self.head_dim
         self.scaling = self.head_dim**-0.5
@@ -38,12 +45,12 @@ class Qwen3Attention(nn.Module):
         self.qkv_proj = QKVParallelLinear(
             hidden_size,
             self.head_dim,
-            self.num_heads,
-            self.num_kv_heads,
+            self.total_num_heads,
+            self.total_num_kv_heads,
             bias=qkv_bias,
         )
         self.o_proj = RowParallelLinear(
-            self.num_heads * self.head_dim,
+            self.total_num_heads * self.head_dim,
             hidden_size,
             bias=False,
         )
@@ -61,7 +68,6 @@ class Qwen3Attention(nn.Module):
             self.scaling,
             self.num_kv_heads,
             attn_backend=mse_config.attn_backend,
-            device=mse_config.device,
         )
         self.q_norm = RMSNorm(self.head_dim, eps=rms_norm_eps)
         self.k_norm = RMSNorm(self.head_dim, eps=rms_norm_eps)

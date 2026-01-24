@@ -4,20 +4,20 @@ from schemas.config import MSEConfig
 import threading
 import asyncio
 from queue import Empty
-import multiprocessing
+import multiprocessing as mp
 from multiprocessing import Process, Queue as MPQueue
 import uuid
 
 # 设置多进程启动方法为 spawn（CUDA 要求）
 try:
-    multiprocessing.set_start_method('spawn', force=True)
+    mp.set_start_method('spawn', force=True)
 except RuntimeError:
     # 如果已经设置过，忽略错误
     pass
 
 # 导入新的进程模块
-from core.tokenizer_manager import tokenizer_manager_main
-from core.gpu_worker import gpu_worker_main
+from core.tokenizer_manager import TokenizerManager
+from core.gpu_worker import GPUWorker
 
 
 class Engine:
@@ -26,10 +26,13 @@ class Engine:
      _has_init = False
      _model_name = ""
      _device = None
+     _attn_backend = ""
+     _tensor_parallel_size = 1
      
      # 多进程架构
-     _prepare_process = None        # Prepare 进程
-     _inference_process = None      # Inference 进程
+     _prepare_processes = None        # Prepare 进程
+     _inference_process = []      # Inference 进程
+     _inference_events = []         # Inference 事件列表
      _raw_request_queue = None      # 原始请求队列（多进程）
      _ready_inference_queue = None  # 准备好的batch队列（多进程）
      _result_queue = None           # 结果队列（多进程）
@@ -49,14 +52,14 @@ class Engine:
                cls._instance = super().__new__(cls)
           return cls._instance
 
-     def __init__(self, attn_backend="flashattention"):
+     def __init__(self, attn_backend="flash_attention", tensor_parallel_size=1):
           if self._has_init:
                return
           self._has_init = True
           self._model_name = "Qwen/Qwen3-Embedding-0.6B"
-          self._device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
-          self._attn_backend = attn_backend  # 保存 attn_backend 参数
-          
+          self._attn_backend = attn_backend  
+          self._tensor_parallel_size = tensor_parallel_size 
+
           # 创建多进程队列
           self._raw_request_queue = MPQueue(maxsize=1000)
           self._ready_inference_queue = MPQueue(maxsize=100)
@@ -64,51 +67,77 @@ class Engine:
           
           print("[Engine] Starting Tokenizer Manager Process...")
           # 启动 Tokenizer Manager 进程（CPU密集型）
+          mse_config = MSEConfig(
+               attn_backend=self._attn_backend,
+               model_name=self._model_name,
+               max_tokens_per_batch=self._max_tokens_per_batch,
+               enable_monitoring=self._enable_monitoring,
+          )
           self._prepare_process = Process(
-              target=tokenizer_manager_main,
-              args=(
-                  self._model_name,
-                  self._device,
-                  self._raw_request_queue,
-                  self._ready_inference_queue,
-                  self._num_tokenize_threads,
-                  self._batch_timeout,
-                  self._max_tokens_per_batch,
-                  self._enable_monitoring
-              ),
-              daemon=True,
-              name="TokenizerManager"
+               target=TokenizerManager,
+               args=(
+                    self._raw_request_queue,
+                    self._ready_inference_queue,
+                    self._num_tokenize_threads,
+                    self._batch_timeout,
+                    mse_config,
+               ),
+               name="TokenizerManager",
           )
           self._prepare_process.start()
-          
+         
           print(f"[Engine] Starting GPU Worker Process (attn_backend={self._attn_backend})...")
-          # 根据 attn_backend 参数设置配置
-          mse_config = MSEConfig(device=str(self._device), attn_backend=self._attn_backend)
-          self._inference_process = Process(
-              target=gpu_worker_main,
-              args=(
-                  self._model_name,
-                  self._device,
-                  self._ready_inference_queue,
-                  self._result_queue,
-                  self._max_tokens_per_batch,
-                  self._enable_monitoring,
-                  mse_config
-              ),
-              daemon=True,
-              name="GPUWorker"
-          )
-          self._inference_process.start()
+
+          ctx = mp.get_context("spawn")
+          for i in range(1, self._tensor_parallel_size):
+               print(f"[Engine] Starting GPU Worker Process Rank {i}...")
+               event = ctx.Event()
+               process = ctx.Process(
+                    target=GPUWorker,
+                    args=(
+                         i,
+                         self._tensor_parallel_size,
+                         event,
+                         self._ready_inference_queue,
+                         self._result_queue,
+                         mse_config,
+                    )
+               )
+               process.start()
+               self._inference_process.append(process)
+               self._inference_events.append(event)
           
+     
+          event = ctx.Event()
+          process = ctx.Process(
+               target=GPUWorker,
+               args=(
+                    0,
+                    self._tensor_parallel_size,
+                    self._inference_events,
+                    self._ready_inference_queue,
+                    self._result_queue,
+                    mse_config,
+               )
+          )
+          process.start()
+          self._inference_process.append(process)
+
           # 启动结果分发线程
           self._result_dispatcher_thread = threading.Thread(
               target=self._result_dispatcher_worker,
-              daemon=True,
               name="ResultDispatcher"
           )
           self._result_dispatcher_thread.start()
           
           print("[Engine] All processes started successfully")
+
+     def exit(self):
+        self.model_runner.call("exit")
+        del self.model_runner
+        for p in self._prepare_processes:
+            p.join()
+
      
      def _result_dispatcher_worker(self):
           """结果分发线程 - 从 result_queue 取结果并分发给对应的 future"""

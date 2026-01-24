@@ -51,7 +51,6 @@ def create_attention(
     scale: float,
     num_kv_heads: int,
     attn_backend: str = "flashAttention",
-    device: str = "cuda:0",
 ) -> BaseAttention:
     """
     Factory function to create attention based on backend type
@@ -62,8 +61,6 @@ def create_attention(
         scale: Scaling factor for attention scores
         num_kv_heads: Number of key-value heads
         attn_backend: Backend type ("flashAttention" or "flashInfer")
-        device: Device to use
-        
     Returns:
         Attention instance
     """
@@ -72,6 +69,6 @@ def create_attention(
         return FlashAttention(num_heads, head_dim, scale, num_kv_heads)
     elif attn_backend == "flash_infer":
         from layers.attention.flashinfer import FlashInferAttention
-        return FlashInferAttention(num_heads, head_dim, scale, num_kv_heads, device)
+        return FlashInferAttention(num_heads, head_dim, scale, num_kv_heads)
     else:
         raise ValueError(f"Unknown attention backend: {attn_backend}")

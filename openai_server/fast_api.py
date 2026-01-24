@@ -56,9 +56,16 @@ def start_server():
     parser.add_argument(
         "--attn-backend",
         type=str,
-        default=os.getenv("MSE_ATTENTION_BACKEND", "flashattention"),
+        default=os.getenv("MSE_ATTENTION_BACKEND", "flash_attention"),
         choices=["flash_attention", "flash_infer"],
-        help="注意力机制后端选择 (默认: flashattention)"
+        help="注意力机制后端选择 (默认: flash_attention)"
+    )
+
+    parser.add_argument(
+        "--tensor_parallel_size",
+        type=int,
+        default=int(os.getenv("MSE_TENSOR_PARALLEL_SIZE", "1")),
+        help="张量并行度 (默认: 1)"
     )
     
     args = parser.parse_args()
@@ -77,7 +84,7 @@ def start_server():
     
     # 初始化 Engine
     print("正在初始化 Engine...")
-    engine_instance = Engine(attn_backend=attn_backend)
+    engine_instance = Engine(attn_backend=attn_backend, tensor_parallel_size=args.tensor_parallel_size)
     print("Engine 初始化完成！")
     print()
     
