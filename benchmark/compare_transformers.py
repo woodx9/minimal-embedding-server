@@ -22,7 +22,7 @@ def main():
     # 使用第一个可见的 GPU（受 CUDA_VISIBLE_DEVICES 控制）
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"使用设备: {device}")
-    mse_config = MSEConfig(device=str(device), attn_backend="flashInfer")
+    mse_config = MSEConfig(attn_backend="flash_infer")
     config = AutoConfig.from_pretrained(model_name)
 
     model_runner = Qwen3ForCausalLM(config, mse_config)

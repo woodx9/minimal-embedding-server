@@ -12,9 +12,7 @@ from ultils.pool import last_token_pool
 def test_accuracy_bf16():
      model_name = "Qwen/Qwen3-Embedding-0.6B"
      config = AutoConfig.from_pretrained(model_name)
-     
-     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-     mse_config = MSEConfig(device=str(device), attn_backend="flashInfer")
+     mse_config = MSEConfig(attn_backend="flash_infer")
      model_runner = Qwen3ForCausalLM(config, mse_config)
 
      model_path = snapshot_download(model_name)
