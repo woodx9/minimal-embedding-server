@@ -183,13 +183,7 @@ class Engine:
                     traceback.print_exc()
                     continue
      
-     async def v1_embeddings(self, request: http.EmbeddingRequest):
-          input = request.input
-          
-          # 确保 input 是列表
-          if isinstance(input, str):
-               input = [input]
-          
+     async def v1_embeddings(self, input):          
           # 创建 Future
           loop = asyncio.get_event_loop()
           future = loop.create_future()
@@ -203,27 +197,4 @@ class Engine:
           # 发送到 Tokenizer Manager 进程
           await asyncio.to_thread(self._raw_request_queue.put, (input, future_id))
           
-          # 等待结果
-          embeddings_list, seq_lengths = await future
-          
-          # 构建响应数据
-          data = [
-               http.EmbeddingData(
-                    object="embedding",
-                    embedding=emb,
-                    index=idx,
-               )
-               for idx, emb in enumerate(embeddings_list)
-          ]
-          
-          total_tokens = sum(seq_lengths)
-          
-          return http.EmbeddingResponse(
-               object="list",
-               data=data,
-               model=request.model,
-               usage=http.EmbeddingUsage(
-                    prompt_tokens=total_tokens,
-                    total_tokens=total_tokens
-               )
-          )
+          return await future
