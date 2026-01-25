@@ -3,6 +3,8 @@ import torch
 from transformers import AutoConfig, AutoTokenizer, AutoModel
 import torch.nn.functional as F
 import asyncio
+import os
+import time
 
 from core.engine import Engine
 from schemas.config import MSEConfig
@@ -10,14 +12,16 @@ from ultils.loader import load_model
 from ultils.pool import last_token_pool
 
 
-def test_accuracy_bf16():
+def test_accuracy_bf16_tp2():
      model_name = "Qwen/Qwen3-Embedding-0.6B"
      config = AutoConfig.from_pretrained(model_name)
-     mes_engine = Engine(attn_backend="flash_attention", tensor_parallel_size=1)
-
-     
+     mes_engine = Engine(attn_backend="flash_attention", tensor_parallel_size=2)
+     print("sleep 10 to wait engine start")
+     time.sleep(10)
+     print("sleep finish")
      tokenizer = AutoTokenizer.from_pretrained(model_name)
      
+
      # 测试文本
      text = "Hello, how are you?"
      print(f"测试文本长度: {len(text)} 字符")

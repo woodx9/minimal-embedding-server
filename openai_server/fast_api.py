@@ -14,8 +14,36 @@ engine_instance = None  # 延迟初始化
 
 
 @app.post("/v1/embeddings")
-async def v1_embeddings(request: http.EmbeddingRequest):    
-    return await engine_instance.v1_embeddings(request)
+async def v1_embeddings(request: http.EmbeddingRequest): 
+    input = request.input
+
+    # 确保 input 是列表
+    if isinstance(input, str):
+        input = [input]
+
+    embeddings_list, seq_lengths = await engine_instance.v1_embeddings(input)
+    
+    # 构建响应数据
+    data = [
+        http.EmbeddingData(
+            object="embedding",
+            embedding=emb,
+            index=idx,
+        )
+        for idx, emb in enumerate(embeddings_list)
+    ]
+
+    total_tokens = sum(seq_lengths)
+    
+    return http.EmbeddingResponse(
+        object="list",
+        data=data,
+        model=request.model,
+        usage=http.EmbeddingUsage(
+            prompt_tokens=total_tokens,
+            total_tokens=total_tokens
+        )
+    )
 
 
 @app.get("/health")

@@ -4,6 +4,7 @@
 
 **核心特性**：
 -  支持 Flash Attention 和 FlashInfer 加速注意力计算
+-  支持 tensor parallel 
 -  多进程架构完全突破 Python GIL 限制
 -  专为 Embedding 场景优化的轻量级推理引擎
 -  智能动态 batch 聚合，最大化 GPU 吞吐
@@ -50,6 +51,7 @@ mes --help
 | `--host` | `0.0.0.0` | 服务器监听地址 |
 | `--port` | `8000` | 服务器监听端口 |
 | `--attn-backend` | `flash_attention` | 注意力后端（flash_attention/flash_infer） |
+| `--tensor_parallel_size` | `1` | 张量并行 size |
 
 
 ### 测试 API
