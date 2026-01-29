@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Minimal Embedding Server (MSE) - 高性能多进程 Embedding 推理框架
+Minimal Embedding Server (MES) - 高性能多进程 Embedding 推理框架
 """
 import os
 import subprocess

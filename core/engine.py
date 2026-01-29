@@ -1,12 +1,14 @@
 import torch
 from schemas import http
-from schemas.config import MSEConfig
+from schemas.config import MESConfig
+from ultils.dtype_utils import get_torch_dtype, check_dtype_compatibility, dtype_to_string
 import threading
 import asyncio
 from queue import Empty
 import multiprocessing as mp
 from multiprocessing import Process, Queue as MPQueue
 import uuid
+from transformers import AutoConfig
 
 # 设置多进程启动方法为 spawn（CUDA 要求）
 try:
@@ -52,13 +54,14 @@ class Engine:
                cls._instance = super().__new__(cls)
           return cls._instance
 
-     def __init__(self, attn_backend="flash_attention", tensor_parallel_size=1):
+     def __init__(self, attn_backend="flash_attention", tensor_parallel_size=1, dtype="auto"):
           if self._has_init:
                return
           self._has_init = True
           self._model_name = "Qwen/Qwen3-Embedding-0.6B"
           self._attn_backend = attn_backend  
-          self._tensor_parallel_size = tensor_parallel_size 
+          self._tensor_parallel_size = tensor_parallel_size
+          self._dtype = dtype 
 
           # 创建多进程队列
           self._raw_request_queue = MPQueue(maxsize=1000)
@@ -67,11 +70,28 @@ class Engine:
           
           print("[Engine] Starting Tokenizer Manager Process...")
           # 启动 Tokenizer Manager 进程（CPU密集型）
-          mse_config = MSEConfig(
+          
+          # 检查dtype兼容性并修正
+          config = AutoConfig.from_pretrained(self._model_name)
+          torch_dtype = get_torch_dtype(self._dtype, config)
+          
+          is_compatible, corrected_dtype, warning_msg = check_dtype_compatibility(
+              torch_dtype, self._attn_backend
+          )
+          
+          if not is_compatible:
+              print(f"[Engine] Warning: {warning_msg}")
+              self._dtype = dtype_to_string(corrected_dtype)
+          
+          print(f"[Engine] Using dtype: {self._dtype}")
+          
+          mes_config = MESConfig(
                attn_backend=self._attn_backend,
                model_name=self._model_name,
                max_tokens_per_batch=self._max_tokens_per_batch,
                enable_monitoring=self._enable_monitoring,
+               dtype=self._dtype,
+               model_config=config,
           )
           self._prepare_process = Process(
                target=TokenizerManager,
@@ -80,7 +100,7 @@ class Engine:
                     self._ready_inference_queue,
                     self._num_tokenize_threads,
                     self._batch_timeout,
-                    mse_config,
+                    mes_config,
                ),
                name="TokenizerManager",
           )
@@ -100,7 +120,7 @@ class Engine:
                          event,
                          self._ready_inference_queue,
                          self._result_queue,
-                         mse_config,
+                         mes_config,
                     )
                )
                process.start()
@@ -117,7 +137,7 @@ class Engine:
                     self._inference_events,
                     self._ready_inference_queue,
                     self._result_queue,
-                    mse_config,
+                    mes_config,
                )
           )
           process.start()

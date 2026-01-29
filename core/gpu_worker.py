@@ -3,9 +3,9 @@ GPU Worker - GPU密集型的推理和后处理进程
 """
 import torch
 import torch.nn.functional as F
-from transformers import AutoConfig
 from models.qwen3 import Qwen3ForCausalLM
 from ultils.loader import load_model
+from ultils.dtype_utils import get_torch_dtype, dtype_to_string
 from huggingface_hub import snapshot_download
 import time
 import threading
@@ -32,15 +32,15 @@ class GPUWorker:
         event,
         ready_queue,
         result_queue,
-        mse_config,
+        mes_config,
     ):
         self.rank = rank
         self.ready_queue = ready_queue
         self.result_queue = result_queue
-        self.mse_config = mse_config
-        self.model_name = mse_config.model_name
-        self.max_tokens_per_batch = mse_config.max_tokens_per_batch
-        self.enable_monitoring = mse_config.enable_monitoring
+        self.mes_config = mes_config
+        self.model_name = mes_config.model_name
+        self.max_tokens_per_batch = mes_config.max_tokens_per_batch
+        self.enable_monitoring = mes_config.enable_monitoring
         self.callback_queue = Queue(maxsize=1000)
         self.rank = rank
         self.world_size = world_size
@@ -58,16 +58,21 @@ class GPUWorker:
 
         # 加载模型到GPU
         print(f"[GPUWorker] Loading model on rank:{self.rank}...")
-        config = AutoConfig.from_pretrained(self.model_name)
+        
+        # 根据配置确定dtype（Engine已经检查过兼容性）
+        torch_dtype = get_torch_dtype(self.mes_config.dtype, self.mes_config.model_config)
+        print(f"[GPUWorker] Using dtype: {dtype_to_string(torch_dtype)}")
+        
         self.model = (
-            Qwen3ForCausalLM(config, self.mse_config)
+            Qwen3ForCausalLM(self.mes_config)
             .to(self.device)
-            .to(torch.bfloat16)
+            .to(torch_dtype)
         )
         self.model.eval()
         model_path = snapshot_download(self.model_name)
         load_model(self.model, model_path)
-        print(f"[GPUWorker] Model loaded successfully on {self.device}")
+        print(f"[GPUWorker] Model loaded successfully on {self.device} with dtype {dtype_to_string(torch_dtype)}")
+
 
         callback_threads = []
         if self.rank == 0:

@@ -40,6 +40,12 @@ mes
 # 指定端口和注意力后端
 mes --port 8000 --attn-backend flash_attention
 
+# 使用不同数据类型
+mes --dtype bfloat16
+
+# 多GPU并行推理
+mes --tensor_parallel_size 2 --dtype auto
+
 # 查看更多选项
 mes --help
 ```
@@ -52,6 +58,8 @@ mes --help
 | `--port` | `8000` | 服务器监听端口 |
 | `--attn-backend` | `flash_attention` | 注意力后端（flash_attention/flash_infer） |
 | `--tensor_parallel_size` | `1` | 张量并行 size |
+| `--dtype` | `auto` | 模型数据类型（auto/float32/float16/bfloat16） |
+
 
 
 ### 测试 API

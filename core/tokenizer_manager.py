@@ -21,16 +21,16 @@ class TokenizerManager:
         ready_queue,
         num_tokenizer_threads,
         batch_timeout,
-        mse_config,
+        mes_config,
     ):
         self.raw_queue = raw_queue
         self.ready_queue = ready_queue
         self.num_tokenizer_threads = num_tokenizer_threads
         self.batch_timeout = batch_timeout
-        self.mse_config = mse_config
-        self.model_name = mse_config.model_name
-        self.max_tokens_per_batch = mse_config.max_tokens_per_batch
-        self.enable_monitoring = mse_config.enable_monitoring
+        self.mes_config = mes_config
+        self.model_name = mes_config.model_name
+        self.max_tokens_per_batch = mes_config.max_tokens_per_batch
+        self.enable_monitoring = mes_config.enable_monitoring
         self.tokenizer = None
         self.tokenized_queue = Queue(maxsize=500)
         self.run()
