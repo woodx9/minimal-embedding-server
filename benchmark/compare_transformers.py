@@ -6,7 +6,7 @@ from pathlib import Path
 # 将项目根目录添加到 Python 路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from schemas.config import MSEConfig
+from schemas.config import MESConfig
 import time
 import asyncio
 from huggingface_hub import snapshot_download

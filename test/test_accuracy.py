@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import asyncio
 
 from core.engine import Engine
-from schemas.config import MSEConfig
+from schemas.config import MESConfig
 from ultils.loader import load_model
 from ultils.pool import last_token_pool
 

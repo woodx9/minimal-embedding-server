@@ -9,7 +9,7 @@ from layers.attention.base import create_attention
 from layers.layernorm import RMSNorm
 from layers.linear import MergedColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from layers.rotary_embedding import get_rope
-from schemas.config import MSEConfig
+from schemas.config import MESConfig
 
 
 class Qwen3Attention(nn.Module):
@@ -19,7 +19,7 @@ class Qwen3Attention(nn.Module):
         hidden_size: int,
         num_heads: int,
         num_kv_heads: int,
-        mse_config: MSEConfig,
+        mes_config: MESConfig,
         max_position: int = 4096 * 32,
         head_dim: int | None = None,
         rms_norm_eps: float = 1e-06,
@@ -40,7 +40,7 @@ class Qwen3Attention(nn.Module):
         self.q_size = self.num_heads * self.head_dim
         self.kv_size = self.num_kv_heads * self.head_dim
         self.scaling = self.head_dim**-0.5
-        self.mse_config = mse_config
+        self.mes_config = mes_config
 
         self.qkv_proj = QKVParallelLinear(
             hidden_size,
@@ -67,7 +67,7 @@ class Qwen3Attention(nn.Module):
             self.head_dim,
             self.scaling,
             self.num_kv_heads,
-            attn_backend=mse_config.attn_backend,
+            attn_backend=mes_config.attn_backend,
         )
         self.q_norm = RMSNorm(self.head_dim, eps=rms_norm_eps)
         self.k_norm = RMSNorm(self.head_dim, eps=rms_norm_eps)
@@ -98,10 +98,10 @@ class Qwen3MLP(nn.Module):
         hidden_size: int,
         intermediate_size: int,
         hidden_act: str,
-        mse_config: MSEConfig,
+        mes_config: MESConfig,
     ) -> None:
         super().__init__()
-        self.mse_config = mse_config
+        self.mes_config = mes_config
         self.gate_up_proj = MergedColumnParallelLinear(
             hidden_size,
             [intermediate_size] * 2,
@@ -126,31 +126,32 @@ class Qwen3DecoderLayer(nn.Module):
 
     def __init__(
         self,
-        config: Qwen3Config,
-        mse_config: MSEConfig,
+        mes_config: MESConfig,
     ) -> None:
         super().__init__()
-        self.mse_config = mse_config
+        self.mes_config = mes_config
+        model_config = mes_config.model_config  # Qwen3Config的代称
+        
         self.self_attn = Qwen3Attention(
-            hidden_size=config.hidden_size,
-            num_heads=config.num_attention_heads,
-            num_kv_heads=config.num_key_value_heads,
-            mse_config=mse_config,
-            max_position=config.max_position_embeddings,
-            rms_norm_eps=config.rms_norm_eps,
-            qkv_bias=getattr(config, 'attention_bias', False),
-            head_dim=getattr(config, 'head_dim', None),
-            rope_theta=getattr(config, "rope_theta", 1000000),
-            rope_scaling=getattr(config, "rope_scaling", None),
+            hidden_size=model_config.hidden_size,
+            num_heads=model_config.num_attention_heads,
+            num_kv_heads=model_config.num_key_value_heads,
+            mes_config=mes_config,
+            max_position=model_config.max_position_embeddings,
+            rms_norm_eps=model_config.rms_norm_eps,
+            qkv_bias=getattr(model_config, 'attention_bias', False),
+            head_dim=getattr(model_config, 'head_dim', None),
+            rope_theta=getattr(model_config, "rope_theta", 1000000),
+            rope_scaling=getattr(model_config, "rope_scaling", None),
         )
         self.mlp = Qwen3MLP(
-            hidden_size=config.hidden_size,
-            intermediate_size=config.intermediate_size,
-            hidden_act=config.hidden_act,
-            mse_config=mse_config,
+            hidden_size=model_config.hidden_size,
+            intermediate_size=model_config.intermediate_size,
+            hidden_act=model_config.hidden_act,
+            mes_config=mes_config,
         )
-        self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.input_layernorm = RMSNorm(model_config.hidden_size, eps=model_config.rms_norm_eps)
+        self.post_attention_layernorm = RMSNorm(model_config.hidden_size, eps=model_config.rms_norm_eps)
 
     def forward(
         self,
@@ -173,14 +174,15 @@ class Qwen3Model(nn.Module):
 
     def __init__(
         self,
-        config: Qwen3Config,
-        mse_config: MSEConfig,
+        mes_config: MESConfig,
     ) -> None:
         super().__init__()
-        self.mse_config = mse_config
-        self.embed_tokens = VocabParallelEmbedding(config.vocab_size, config.hidden_size)
-        self.layers = nn.ModuleList([Qwen3DecoderLayer(config, mse_config) for _ in range(config.num_hidden_layers)])
-        self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.mes_config = mes_config
+        model_config = mes_config.model_config  # Qwen3Config的代称
+        
+        self.embed_tokens = VocabParallelEmbedding(model_config.vocab_size, model_config.hidden_size)
+        self.layers = nn.ModuleList([Qwen3DecoderLayer(mes_config) for _ in range(model_config.num_hidden_layers)])
+        self.norm = RMSNorm(model_config.hidden_size, eps=model_config.rms_norm_eps)
 
     def forward(
         self,
@@ -206,14 +208,13 @@ class Qwen3ForCausalLM(nn.Module):
 
     def __init__(
         self,
-        config: Qwen3Config,
-        mse_config: MSEConfig = None,
+        mes_config: MESConfig = None,
     ) -> None:
         super().__init__()
-        if mse_config is None:
-            mse_config = MSEConfig()
-        self.mse_config = mse_config
-        self.model = Qwen3Model(config, mse_config)
+        if mes_config is None:
+            mes_config = MESConfig()
+        self.mes_config = mes_config
+        self.model = Qwen3Model(mes_config)
 
     def forward(
         self,
