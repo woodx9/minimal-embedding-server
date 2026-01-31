@@ -1,5 +1,7 @@
 # Minimal Embedding Server (MES) - 高性能多进程推理框架
 
+[English](README_EN.md) | 中文
+
 一个基于多进程架构的高性能 Embedding 服务器，专门为解决 CPU tokenizer 瓶颈和最大化 GPU 利用率而设计。
 
 **核心特性**：
