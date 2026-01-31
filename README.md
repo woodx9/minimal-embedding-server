@@ -1,5 +1,7 @@
 # Minimal Embedding Server (MES) - 高性能多进程推理框架
 
+[English](README_EN.md) | 中文
+
 一个基于多进程架构的高性能 Embedding 服务器，专门为解决 CPU tokenizer 瓶颈和最大化 GPU 利用率而设计。
 
 **核心特性**：
@@ -8,8 +10,13 @@
 -  多进程架构完全突破 Python GIL 限制
 -  专为 Embedding 场景优化的轻量级推理引擎
 -  智能动态 batch 聚合，最大化 GPU 吞吐
+-  自动模型架构识别，支持 Qwen2 和 Qwen3 系列模型
 
-> **注意**：当前版本仅支持 **Qwen3 Embedding** 系列模型（如 `Qwen/Qwen3-Embedding-0.6B`）
+> **支持的模型架构**：
+> - **Qwen2ForCausalLM**：Qwen2 系列模型（如 `Qwen/Qwen2-0.5B`、`Qwen/Qwen2-1.5B` 等）
+> - **Qwen3ForCausalLM**：Qwen3 系列模型（如 `Qwen/Qwen3-Embedding-0.6B` 等）
+> 
+> 系统会根据模型配置的 `architectures` 字段自动选择对应的模型实现
 
 ## 快速开始
 
@@ -34,17 +41,20 @@ pip install -e .
 #### 方式 1: 命令行启动（推荐）
 
 ```bash
-# 基本启动（默认使用 flash_attention）
-mes
+# 启动 Qwen3 Embedding 模型
+mes --model "Qwen/Qwen3-Embedding-0.6B"
+
+# 启动 Qwen2 模型
+mes --model "Qwen/Qwen2-0.5B"
 
 # 指定端口和注意力后端
-mes --port 8000 --attn-backend flash_attention
+mes --model "Qwen/Qwen3-Embedding-0.6B" --port 8000 --attn-backend flash_attn
 
 # 使用不同数据类型
-mes --dtype bfloat16
+mes --model "Qwen/Qwen2-1.5B" --dtype bfloat16
 
 # 多GPU并行推理
-mes --tensor_parallel_size 2 --dtype auto
+mes --model "Qwen/Qwen3-Embedding-0.6B" --tensor_parallel_size 2 --dtype auto
 
 # 查看更多选项
 mes --help
@@ -54,9 +64,10 @@ mes --help
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
+| `--model` | **必需** | **模型名称或路径（必需参数）** |
 | `--host` | `0.0.0.0` | 服务器监听地址 |
 | `--port` | `8000` | 服务器监听端口 |
-| `--attn-backend` | `flash_attention` | 注意力后端（flash_attention/flash_infer） |
+| `--attn-backend` | `flash_attn` | 注意力后端（flash_attn/flash_infer） |
 | `--tensor_parallel_size` | `1` | 张量并行 size |
 | `--dtype` | `auto` | 模型数据类型（auto/float32/float16/bfloat16） |
 

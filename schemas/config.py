@@ -1,7 +1,7 @@
 class MESConfig:
     def __init__(
         self,
-        attn_backend: str = "flash_attention",
+        attn_backend: str = "flash_attn",
         model_name: str | None = None,
         max_tokens_per_batch: int | None = None,
         enable_monitoring: bool | None = None,

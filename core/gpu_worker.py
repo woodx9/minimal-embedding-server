@@ -3,7 +3,8 @@ GPU Worker - GPU密集型的推理和后处理进程
 """
 import torch
 import torch.nn.functional as F
-from models.qwen3 import Qwen3ForCausalLM
+import models
+from models.registry import get_model_class
 from ultils.loader import load_model
 from ultils.dtype_utils import get_torch_dtype, dtype_to_string
 from huggingface_hub import snapshot_download
@@ -33,6 +34,7 @@ class GPUWorker:
         ready_queue,
         result_queue,
         mes_config,
+        nccl_port,
     ):
         self.rank = rank
         self.ready_queue = ready_queue
@@ -45,26 +47,28 @@ class GPUWorker:
         self.rank = rank
         self.world_size = world_size
         self.event = event 
+        self.nccl_port = nccl_port
         self.model = None
         self.run()
 
     def run(self):
         # 初始化分布式环境
         dist.init_process_group(
-            "nccl", "tcp://localhost:2333", world_size=self.world_size, rank=self.rank
+            "nccl", f"tcp://localhost:{self.nccl_port}", world_size=self.world_size, rank=self.rank
         )
         torch.cuda.set_device(self.rank)
         self.device = torch.device(f"cuda:{self.rank}")
 
-        # 加载模型到GPU
         print(f"[GPUWorker] Loading model on rank:{self.rank}...")
         
-        # 根据配置确定dtype（Engine已经检查过兼容性）
         torch_dtype = get_torch_dtype(self.mes_config.dtype, self.mes_config.model_config)
         print(f"[GPUWorker] Using dtype: {dtype_to_string(torch_dtype)}")
         
+        model_class = get_model_class(self.mes_config.model_config)
+        print(f"[GPUWorker] Using model class: {model_class.__name__}")
+        
         self.model = (
-            Qwen3ForCausalLM(self.mes_config)
+            model_class(self.mes_config)
             .to(self.device)
             .to(torch_dtype)
         )

@@ -26,7 +26,7 @@ def main():
     print(f"使用设备: {device}")
     
     config = AutoConfig.from_pretrained(model_name)
-    mes_engine = Engine(attn_backend="flash_attention", tensor_parallel_size=1)
+    mes_engine = Engine(model_name=model_name, attn_backend="flash_attn", tensor_parallel_size=1)
     
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     

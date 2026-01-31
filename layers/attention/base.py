@@ -64,7 +64,7 @@ def create_attention(
     Returns:
         Attention instance
     """
-    if attn_backend == "flash_attention":
+    if attn_backend == "flash_attn":
         from layers.attention.flashattention import FlashAttention
         return FlashAttention(num_heads, head_dim, scale, num_kv_heads)
     elif attn_backend == "flash_infer":
