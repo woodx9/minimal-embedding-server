@@ -1,19 +1,19 @@
 import torch
 from torch import nn
-from transformers import Qwen3Config
+from transformers import Qwen2Config
 import torch.distributed as dist
 
+from layers.activation import SiluAndMul
 from layers.embed_head import VocabParallelEmbedding
 from layers.attention.base import create_attention
 from layers.layernorm import RMSNorm
-from layers.linear import QKVParallelLinear, RowParallelLinear
+from layers.linear import MergedColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from layers.rotary_embedding import get_rope
-from models.qwen2 import Qwen2MLP
 from schemas.config import MESConfig
 from models.registry import register_model
 
 
-class Qwen3Attention(nn.Module):
+class Qwen2Attention(nn.Module):
 
     def __init__(
         self,
@@ -80,18 +80,44 @@ class Qwen3Attention(nn.Module):
     ) -> torch.Tensor:
         qkv = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
-        q_by_head = q.view(-1, self.num_heads, self.head_dim)
-        q_by_head = self.q_norm(q_by_head)
-        q = q_by_head.view(q.shape)
-        k_by_head = k.view(-1, self.num_kv_heads, self.head_dim)
-        k_by_head = self.k_norm(k_by_head)
-        k = k_by_head.view(k.shape)
         q, k = self.rotary_emb(positions, q, k)
         o = self.attn(q, k, v, positions)
         output = self.o_proj(o)
         return output
 
-class Qwen3DecoderLayer(nn.Module):
+
+class Qwen2MLP(nn.Module):
+
+    def __init__(
+        self,
+        hidden_size: int,
+        intermediate_size: int,
+        hidden_act: str,
+        mes_config: MESConfig,
+    ) -> None:
+        super().__init__()
+        self.mes_config = mes_config
+        self.gate_up_proj = MergedColumnParallelLinear(
+            hidden_size,
+            [intermediate_size] * 2,
+            bias=False,
+        )
+        self.down_proj = RowParallelLinear(
+            intermediate_size,
+            hidden_size,
+            bias=False,
+        )
+        assert hidden_act == "silu"
+        self.act_fn = SiluAndMul()
+
+    def forward(self, x):
+        gate_up = self.gate_up_proj(x)
+        x = self.act_fn(gate_up)
+        x = self.down_proj(x)
+        return x
+
+
+class Qwen2DecoderLayer(nn.Module):
 
     def __init__(
         self,
@@ -99,16 +125,16 @@ class Qwen3DecoderLayer(nn.Module):
     ) -> None:
         super().__init__()
         self.mes_config = mes_config
-        model_config = mes_config.model_config  # Qwen3Config的代称
+        model_config = mes_config.model_config  # Qwen2Config的代称
         
-        self.self_attn = Qwen3Attention(
+        self.self_attn = Qwen2Attention(
             hidden_size=model_config.hidden_size,
             num_heads=model_config.num_attention_heads,
             num_kv_heads=model_config.num_key_value_heads,
             mes_config=mes_config,
             max_position=model_config.max_position_embeddings,
             rms_norm_eps=model_config.rms_norm_eps,
-            qkv_bias=getattr(model_config, 'attention_bias', False),
+            qkv_bias=True,
             head_dim=getattr(model_config, 'head_dim', None),
             rope_theta=getattr(model_config, "rope_theta", 1000000),
             rope_scaling=getattr(model_config, "rope_scaling", None),
@@ -139,7 +165,7 @@ class Qwen3DecoderLayer(nn.Module):
         return hidden_states, residual
 
 
-class Qwen3Model(nn.Module):
+class Qwen2Model(nn.Module):
 
     def __init__(
         self,
@@ -147,10 +173,10 @@ class Qwen3Model(nn.Module):
     ) -> None:
         super().__init__()
         self.mes_config = mes_config
-        model_config = mes_config.model_config  # Qwen3Config的代称
+        model_config = mes_config.model_config  # Qwen2Config的代称
         
         self.embed_tokens = VocabParallelEmbedding(model_config.vocab_size, model_config.hidden_size)
-        self.layers = nn.ModuleList([Qwen3DecoderLayer(mes_config) for _ in range(model_config.num_hidden_layers)])
+        self.layers = nn.ModuleList([Qwen2DecoderLayer(mes_config) for _ in range(model_config.num_hidden_layers)])
         self.norm = RMSNorm(model_config.hidden_size, eps=model_config.rms_norm_eps)
 
     def forward(
@@ -166,8 +192,8 @@ class Qwen3Model(nn.Module):
         return hidden_states
 
 
-@register_model("Qwen3ForCausalLM")
-class Qwen3ForCausalLM(nn.Module):
+@register_model("Qwen2ForCausalLM")
+class Qwen2ForCausalLM(nn.Module):
     packed_modules_mapping = {
         "q_proj": ("qkv_proj", "q"),
         "k_proj": ("qkv_proj", "k"),
@@ -184,7 +210,7 @@ class Qwen3ForCausalLM(nn.Module):
         if mes_config is None:
             mes_config = MESConfig()
         self.mes_config = mes_config
-        self.model = Qwen3Model(mes_config)
+        self.model = Qwen2Model(mes_config)
 
     def forward(
         self,

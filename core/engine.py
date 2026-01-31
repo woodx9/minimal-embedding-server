@@ -1,14 +1,17 @@
 import torch
-from schemas import http
-from schemas.config import MESConfig
-from ultils.dtype_utils import get_torch_dtype, check_dtype_compatibility, dtype_to_string
-import threading
+import torch.nn.functional as F
 import asyncio
+import threading
+import uuid
 from queue import Empty
 import multiprocessing as mp
 from multiprocessing import Process, Queue as MPQueue
-import uuid
 from transformers import AutoConfig
+import socket
+
+from schemas import http
+from schemas.config import MESConfig
+from ultils.dtype_utils import get_torch_dtype, check_dtype_compatibility, dtype_to_string
 
 # 设置多进程启动方法为 spawn（CUDA 要求）
 try:
@@ -23,42 +26,30 @@ from core.gpu_worker import GPUWorker
 
 
 class Engine:
-     _instance = None
-     _lock = threading.Lock()
-     _has_init = False
-     _model_name = ""
-     _device = None
-     _attn_backend = ""
-     _tensor_parallel_size = 1
-     
-     # 多进程架构
-     _prepare_processes = None        # Prepare 进程
-     _inference_process = []      # Inference 进程
-     _inference_events = []         # Inference 事件列表
-     _raw_request_queue = None      # 原始请求队列（多进程）
-     _ready_inference_queue = None  # 准备好的batch队列（多进程）
-     _result_queue = None           # 结果队列（多进程）
-     _future_map = {}               # future_id -> (future, num_texts)
-     _future_lock = threading.Lock()  # 保护 _future_map 的读写
-     _result_dispatcher_thread = None  # 结果分发线程
-     
-     # 配置
-     _num_tokenize_threads = 5     # tokenizer 线程数
-     _max_batch_size = 64
-     _batch_timeout = 0.05
-     _max_tokens_per_batch = 120000
-     _enable_monitoring = True
+     def __init__(self, model_name, attn_backend="flash_attn", tensor_parallel_size=1, dtype="auto"):
+          self._model_name = model_name
+          self._attn_backend = attn_backend  
+          self._tensor_parallel_size = tensor_parallel_size
+          self._dtype = dtype 
 
-     def __new__(cls, *args, **kwargs):
-          if cls._instance is None:
-               cls._instance = super().__new__(cls)
-          return cls._instance
-
-     def __init__(self, attn_backend="flash_attention", tensor_parallel_size=1, dtype="auto"):
-          if self._has_init:
-               return
-          self._has_init = True
-          self._model_name = "Qwen/Qwen3-Embedding-0.6B"
+          # 多进程架构
+          self._prepare_process = None        # Prepare 进程
+          self._inference_process = []      # Inference 进程
+          self._inference_events = []         # Inference 事件列表
+          self._raw_request_queue = None      # 原始请求队列（多进程）
+          self._ready_inference_queue = None  # 准备好的batch队列（多进程）
+          self._result_queue = None           # 结果队列（多进程）
+          self._future_map = {}               # future_id -> (future, num_texts)
+          self._future_lock = threading.Lock()  # 保护 _future_map 的读写
+          self._result_dispatcher_thread = None  # 结果分发线程
+          
+          # 配置
+          self._num_tokenize_threads = 5     # tokenizer 线程数
+          self._max_batch_size = 64
+          self._batch_timeout = 0.05
+          self._max_tokens_per_batch = 120000
+          self._enable_monitoring = True
+          self._model_name = model_name
           self._attn_backend = attn_backend  
           self._tensor_parallel_size = tensor_parallel_size
           self._dtype = dtype 
@@ -67,6 +58,9 @@ class Engine:
           self._raw_request_queue = MPQueue(maxsize=1000)
           self._ready_inference_queue = MPQueue(maxsize=100)
           self._result_queue = MPQueue(maxsize=1000)
+          
+          # 找一个空闲端口用于 NCCL
+          self._nccl_port = self._find_free_port()
           
           print("[Engine] Starting Tokenizer Manager Process...")
           # 启动 Tokenizer Manager 进程（CPU密集型）
@@ -121,6 +115,7 @@ class Engine:
                          self._ready_inference_queue,
                          self._result_queue,
                          mes_config,
+                         self._nccl_port,
                     )
                )
                process.start()
@@ -138,6 +133,7 @@ class Engine:
                     self._ready_inference_queue,
                     self._result_queue,
                     mes_config,
+                    self._nccl_port,
                )
           )
           process.start()
@@ -203,6 +199,17 @@ class Engine:
                     traceback.print_exc()
                     continue
      
+     def get_model_name(self):
+          return self._model_name
+
+     def _find_free_port(self):
+          """查找一个空闲的端口"""
+          with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+               s.bind(('', 0))
+               s.listen(1)
+               port = s.getsockname()[1]
+          return port
+
      async def v1_embeddings(self, input):          
           # 创建 Future
           loop = asyncio.get_event_loop()

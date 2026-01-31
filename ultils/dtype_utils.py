@@ -47,7 +47,7 @@ def _get_best_dtype() -> torch.dtype:
 def check_dtype_compatibility(dtype: torch.dtype, attn_backend: str) -> tuple[bool, torch.dtype, str]:
     """检查dtype与attention backend的兼容性"""
     # 检查attention backend是否支持float32
-    if dtype == torch.float32 and attn_backend in ["flash_infer", "flash_attention"]:
+    if dtype == torch.float32 and attn_backend in ["flash_infer", "flash_attn"]:
         best_dtype = _get_best_dtype()
         return False, best_dtype, f"{attn_backend} doesn't support float32, using {dtype_to_string(best_dtype)}"
     

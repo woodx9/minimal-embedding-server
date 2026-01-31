@@ -3,6 +3,7 @@
 
 import argparse
 import os
+import sys
 from fastapi import FastAPI
 
 from core.engine import Engine
@@ -15,6 +16,26 @@ engine_instance = None  # 延迟初始化
 
 @app.post("/v1/embeddings")
 async def v1_embeddings(request: http.EmbeddingRequest): 
+    # 验证模型参数
+    if not request.model:
+        return http.ErrorResponse(
+            error=http.ErrorDetail(
+                message="Model parameter is required",
+                type="invalid_request_error",
+                param="model"
+            )
+        )
+    
+    # 验证模型是否匹配当前加载的模型
+    if request.model != engine_instance.get_model_name():
+        return http.ErrorResponse(
+            error=http.ErrorDetail(
+                message=f"Model '{request.model}' not found. Current loaded model: '{engine_instance.get_model_name()}'",
+                type="invalid_request_error",
+                param="model"
+            )
+        )
+    
     input = request.input
 
     # 确保 input 是列表
@@ -82,11 +103,18 @@ def start_server():
     )
 
     parser.add_argument(
+        "--model",
+        type=str,
+        required=True,
+        help="模型名称或路径 (必需参数)"
+    )
+
+    parser.add_argument(
         "--attn-backend",
         type=str,
-        default=os.getenv("MES_ATTENTION_BACKEND", "flash_attention"),
-        choices=["flash_attention", "flash_infer"],
-        help="注意力机制后端选择 (默认: flash_attention)"
+        default=os.getenv("MES_ATTENTION_BACKEND", "flash_attn"),
+        choices=["flash_attn", "flash_infer"],
+        help="注意力机制后端选择 (默认: flash_attn)"
     )
 
     parser.add_argument(
@@ -108,22 +136,22 @@ def start_server():
     
     # 初始化 Engine（在启动服务器之前）
     global engine_instance
-    attn_backend = args.attn_backend if hasattr(args, 'attn_backend') else args.__dict__.get('attn-backend', 'flashattention')
     
-    # 打印启动信息
     print("=" * 60)
     print("MES - Minimal Embedding Server")
     print("=" * 60)
     print(f"服务器地址: http://{args.host}:{args.port}")
     print(f"健康检查: http://{args.host}:{args.port}/health")
-    print(f"注意力后端: {attn_backend}")
+    print(f"模型: {args.model}")
+    print(f"注意力后端: {args.attn_backend}")
     print(f"数据类型: {args.dtype}")
     print(f"张量并行度: {args.tensor_parallel_size}")
     
     # 初始化 Engine
     print("正在初始化 Engine...")
     engine_instance = Engine(
-        attn_backend=attn_backend, 
+        model_name=args.model,
+        attn_backend=args.attn_backend, 
         tensor_parallel_size=args.tensor_parallel_size,
         dtype=args.dtype
     )

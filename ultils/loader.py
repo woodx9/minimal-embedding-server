@@ -16,6 +16,8 @@ def load_model(model: nn.Module, path: str):
             for weight_name in f.keys():
                 if not weight_name.startswith("model."):
                     param_name = f"model.{weight_name}"
+                else:
+                    param_name = weight_name
 
                 for k in packed_modules_mapping:
                     if k in weight_name:
