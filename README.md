@@ -31,9 +31,9 @@ pip install -e .
 ```
 
 > **注意**：安装过程会自动下载并安装：
-> - PyTorch 2.4.1 (CUDA 12.1)
-> - Flash Attention 2.8.3
-> - FlashInfer 0.6.1
+> - PyTorch 2.9.1 (CUDA 12.8)
+> - SGL-Kernel 0.3.21 
+> - FlashInfer 0.6.2
 > - 其他依赖包
 
 ### 使用方式
@@ -324,7 +324,6 @@ with self._future_lock:
 ```
 
 ### 2. 跨进程通信优化
-
 ```python
 # 使用 multiprocessing.Queue 进行进程间通信
 raw_request_queue = MPQueue(maxsize=1000)
