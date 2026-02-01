@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from flash_attn import flash_attn_varlen_func
+from sgl_kernel.flash_attn import flash_attn_varlen_func
 from layers.attention.base import BaseAttention
 
 

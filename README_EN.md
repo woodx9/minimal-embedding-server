@@ -31,9 +31,9 @@ pip install -e .
 ```
 
 > **Note**: The installation process will automatically download and install:
-> - PyTorch 2.4.1 (CUDA 12.1)
-> - Flash Attention 2.8.3
-> - FlashInfer 0.6.1
+> - PyTorch 2.9.1 (CUDA 12.8)
+> - SGL-Kernel 0.3.21
+> - FlashInfer 0.6.2
 > - Other dependencies
 
 ### Usage

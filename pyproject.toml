@@ -10,6 +10,46 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
 authors = [{name = "woodx9"}]
+dependencies = [
+    # Web 框架
+    "fastapi==0.109.2",
+    "uvicorn[standard]==0.27.1",
+    "pydantic==2.6.1",
+    
+    # Transformers
+    "transformers==4.57.3",
+    "tokenizers>=0.20.0",
+    "huggingface-hub>=0.25.0",
+    "safetensors>=0.4.5",
+    
+    # Attention backends
+    "sgl-kernel>=0.3.21",
+    "flashinfer_python==0.6.2",
+    
+    # PyTorch
+    "torch==2.9.1",
+    "torchvision>=0.20.0",
+    
+    # 其他依赖
+    "numpy>=1.26.4",
+    "packaging>=24.0",
+    "pyyaml>=6.0",
+    "regex>=2024.0.0",
+    "requests>=2.32.0",
+    "tqdm>=4.66.0",
+    "filelock>=3.16.0",
+    "einops==0.7.0",
+    "aiohttp",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+]
 
 [project.scripts]
 mes = "openai_server.fast_api:start_server"
+
+[tool.setuptools.packages.find]
+exclude = ["test*", "benchmark*"]
