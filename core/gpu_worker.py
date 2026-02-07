@@ -49,6 +49,7 @@ class GPUWorker:
         self.event = event 
         self.nccl_port = nccl_port
         self.model = None
+        self.shutdown_event = threading.Event()
         self.run()
 
     def run(self):
@@ -104,10 +105,12 @@ class GPUWorker:
                 self.shm = SharedMemory(name="minimal-embedding-server")
                 self.loop()
         
-        # 等待线程
-        inference_thread.join()
-        for t in callback_threads:
-            t.join()
+        # 等待 shutdown 事件
+        try:
+            self.shutdown_event.wait()
+        except KeyboardInterrupt:
+            print(f"[GPUWorker rank:{self.rank}] Received interrupt signal, shutting down...")
+        
         print("[GPUWorker] Shutting down...")
 
     def exit(self):
@@ -153,7 +156,7 @@ class GPUWorker:
 
     def _callback_worker(self):
         """异步回调线程 - 将结果发送回主进程"""
-        while True:
+        while not self.shutdown_event.is_set():
             try:
                 embeddings_list, seq_lengths, future_ids = self.callback_queue.get(timeout=0.1)
 
@@ -177,7 +180,7 @@ class GPUWorker:
 
     def _inference_worker(self):
         """推理线程 - GPU密集型操作"""
-        while True:
+        while not self.shutdown_event.is_set():
             try:
                 wait_start = time.time()
                 # 获取准备好的 batch
