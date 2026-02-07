@@ -10,6 +10,8 @@ from ultils.dtype_utils import get_torch_dtype, dtype_to_string
 from huggingface_hub import snapshot_download
 import time
 import threading
+import signal
+import sys
 from queue import Queue, Empty
 import torch.distributed as dist
 from multiprocessing.shared_memory import SharedMemory
@@ -50,15 +52,31 @@ class GPUWorker:
         self.nccl_port = nccl_port
         self.model = None
         self.shutdown_event = threading.Event()
+        self._cleanup_done = False  # 标记是否已清理
         self.run()
 
     def run(self):
+        # 注册信号处理器，确保清理资源
+        def signal_handler(signum, frame):
+            print(f"[GPUWorker rank:{self.rank}] Received signal {signum}, cleaning up...")
+            self._cleanup_resources()
+            import sys
+            sys.exit(0)
+        
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+        
         # 初始化分布式环境
-        dist.init_process_group(
-            "nccl", f"tcp://localhost:{self.nccl_port}", world_size=self.world_size, rank=self.rank
-        )
         torch.cuda.set_device(self.rank)
         self.device = torch.device(f"cuda:{self.rank}")
+        
+        dist.init_process_group(
+            backend="nccl",
+            init_method=f"tcp://localhost:{self.nccl_port}",
+            world_size=self.world_size,
+            rank=self.rank,
+            device_id=torch.device(f"cuda:{self.rank}")  # 明确指定设备
+        )
 
         print(f"[GPUWorker] Loading model on rank:{self.rank}...")
         
@@ -98,6 +116,15 @@ class GPUWorker:
 
         if self.world_size > 1:
             if self.rank == 0:
+                # 先尝试清理可能残留的共享内存
+                try:
+                    old_shm = SharedMemory(name="minimal-embedding-server")
+                    old_shm.close()
+                    old_shm.unlink()
+                    print("[GPUWorker rank:0] Cleaned up old shared memory")
+                except FileNotFoundError:
+                    pass  # 没有残留，正常
+                
                 self.shm = SharedMemory(name="minimal-embedding-server", create=True, size=2**20)
                 dist.barrier()
             else:
@@ -106,23 +133,39 @@ class GPUWorker:
                 self.loop()
         
         # 等待 shutdown 事件
-        try:
-            self.shutdown_event.wait()
-        except KeyboardInterrupt:
-            print(f"[GPUWorker rank:{self.rank}] Received interrupt signal, shutting down...")
+        self.shutdown_event.wait()
         
         print("[GPUWorker] Shutting down...")
 
+    def _cleanup_shared_memory(self):
+        """清理共享内存资源"""
+        if self.world_size > 1 and hasattr(self, 'shm'):
+            try:
+                self.shm.close()
+                if self.rank == 0:
+                    self.shm.unlink()
+                    print("[GPUWorker rank:0] Shared memory unlinked")
+            except Exception as e:
+                print(f"[GPUWorker rank:{self.rank}] Error cleaning up shared memory: {e}")
+    
+    def _cleanup_resources(self):
+        """清理所有资源"""
+        # 清理共享内存
+        self._cleanup_shared_memory()
+        
+        # 销毁进程组
+        if dist.is_initialized():
+            try:
+                dist.destroy_process_group()
+                print(f"[GPUWorker rank:{self.rank}] Process group destroyed")
+            except Exception as e:
+                print(f"[GPUWorker rank:{self.rank}] Error destroying process group: {e}")
+
     def exit(self):
-        if self.world_size > 1:
-            self.shm.close()
-            dist.barrier()
-            if self.rank == 0:
-                self.shm.unlink()
-        if not self.enforce_eager:
+        self._cleanup_resources()
+        if hasattr(self, 'graphs') and hasattr(self, 'graph_pool'):
             del self.graphs, self.graph_pool
         torch.cuda.synchronize()
-        dist.destroy_process_group()
 
     def loop(self):
         while True:
