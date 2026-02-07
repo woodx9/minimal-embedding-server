@@ -33,12 +33,13 @@ class TokenizerManager:
         self.enable_monitoring = mes_config.enable_monitoring
         self.tokenizer = None
         self.tokenized_queue = Queue(maxsize=500)
+        self.shutdown_event = threading.Event()
         self.run()
 
 
     def _tokenize_worker(self):
         """Tokenizer 线程 - CPU密集型tokenization"""
-        while True:
+        while not self.shutdown_event.is_set():
             try:
                 item = self.raw_queue.get(timeout=0.1)
                 if item is None:  # 终止信号
@@ -78,7 +79,7 @@ class TokenizerManager:
         """BatchPrepare 线程 - 单线程聚合，激进收集"""
         thread_id = "BatchPrepare-0"
 
-        while True:
+        while not self.shutdown_event.is_set():
             batch = []
             total_tokens = 0
             start_time = time.time()
@@ -208,9 +209,10 @@ class TokenizerManager:
         )
         batch_thread.start()
 
-        # 等待线程
-        for t in tokenizer_threads:
-            t.join()
-        batch_thread.join()
+        # 等待 shutdown 事件
+        try:
+            self.shutdown_event.wait()
+        except KeyboardInterrupt:
+            print("[TokenizerManager] Received interrupt signal, shutting down...")
 
         print("[TokenizerManager] Shutting down...")

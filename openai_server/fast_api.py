@@ -6,6 +6,7 @@ import os
 import sys
 import base64
 import asyncio
+import signal
 from array import array
 from fastapi import FastAPI
 
@@ -15,6 +16,37 @@ from schemas import http
 
 app = FastAPI(title="MES - Minimal Embedding Server", version="0.1.0")
 engine_instance = None  # 延迟初始化
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """应用关闭时的清理逻辑"""
+    global engine_instance
+    if engine_instance:
+        print("\n[FastAPI] Shutting down engine...")
+        try:
+            # 终止子进程
+            if engine_instance._prepare_process and engine_instance._prepare_process.is_alive():
+                engine_instance._prepare_process.terminate()
+                engine_instance._prepare_process.join(timeout=2)
+                if engine_instance._prepare_process.is_alive():
+                    engine_instance._prepare_process.kill()
+            
+            for process in engine_instance._inference_process:
+                if process.is_alive():
+                    process.terminate()
+                    process.join(timeout=2)
+                    if process.is_alive():
+                        process.kill()
+            
+            # 终止结果分发线程
+            if engine_instance._result_dispatcher_thread and engine_instance._result_dispatcher_thread.is_alive():
+                engine_instance._result_queue.put(None)  # 发送终止信号
+                engine_instance._result_dispatcher_thread.join(timeout=2)
+            
+            print("[FastAPI] Engine shutdown complete")
+        except Exception as e:
+            print(f"[FastAPI] Error during shutdown: {e}")
 
 
 def _encode_embeddings_to_base64(embeddings_list):
@@ -194,14 +226,27 @@ def start_server():
     print("Engine 初始化完成！")
     print()
     
+    # 设置信号处理器
+    def signal_handler(signum, frame):
+        print("\n[Main] Received interrupt signal, shutting down gracefully...")
+        sys.exit(0)
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
     # 启动服务器
     import uvicorn
-    uvicorn.run(
-        "openai_server.fast_api:app",
-        host=args.host,
-        port=args.port,
-        log_level="info"
-    )
+    try:
+        uvicorn.run(
+            "openai_server.fast_api:app",
+            host=args.host,
+            port=args.port,
+            log_level="info"
+        )
+    except KeyboardInterrupt:
+        print("\n[Main] Keyboard interrupt received")
+    finally:
+        print("[Main] Cleaning up...")
 
 
 if __name__ == "__main__":
