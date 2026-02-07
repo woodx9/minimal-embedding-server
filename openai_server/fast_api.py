@@ -5,7 +5,8 @@ import argparse
 import os
 import sys
 import base64
-import struct
+import asyncio
+from array import array
 from fastapi import FastAPI
 
 from core.engine import Engine
@@ -14,6 +15,20 @@ from schemas import http
 
 app = FastAPI(title="MES - Minimal Embedding Server", version="0.1.0")
 engine_instance = None  # 延迟初始化
+
+
+def _encode_embeddings_to_base64(embeddings_list):
+    """
+    高效地将embedding列表编码为base64字符串列表
+    使用array.array避免struct.pack的开销
+    """
+    encoded = []
+    for emb in embeddings_list:
+        # 使用array.array直接转换为bytes，比struct.pack快得多
+        float_bytes = array('f', emb).tobytes()
+        b64_str = base64.b64encode(float_bytes).decode('utf-8')
+        encoded.append(b64_str)
+    return encoded
 
 
 @app.post("/v1/embeddings")
@@ -50,14 +65,11 @@ async def v1_embeddings(request: http.EmbeddingRequest):
     encoding_format = request.encoding_format or "float"
     
     if encoding_format == "base64":
-        # 将 float list 转换为 base64 编码
-        encoded_embeddings = []
-        for emb in embeddings_list:
-            # 将 float list 打包为 bytes (使用 little-endian float32)
-            float_bytes = struct.pack(f'<{len(emb)}f', *emb)
-            # base64 编码
-            b64_str = base64.b64encode(float_bytes).decode('utf-8')
-            encoded_embeddings.append(b64_str)
+        # 在线程池中执行编码，避免阻塞事件循环
+        encoded_embeddings = await asyncio.to_thread(
+            _encode_embeddings_to_base64, 
+            embeddings_list
+        )
         
         data = [
             http.EmbeddingData(
