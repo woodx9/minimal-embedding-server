@@ -12,7 +12,7 @@ class EmbeddingRequest(BaseModel):
 
 class EmbeddingData(BaseModel):
     object: str = "embedding"
-    embedding: List[float]
+    embedding: Union[List[float], str]  # float list or base64 string
     index: int
 
 

@@ -4,6 +4,8 @@
 import argparse
 import os
 import sys
+import base64
+import struct
 from fastapi import FastAPI
 
 from core.engine import Engine
@@ -44,15 +46,37 @@ async def v1_embeddings(request: http.EmbeddingRequest):
 
     embeddings_list, seq_lengths = await engine_instance.v1_embeddings(input)
     
-    # 构建响应数据
-    data = [
-        http.EmbeddingData(
-            object="embedding",
-            embedding=emb,
-            index=idx,
-        )
-        for idx, emb in enumerate(embeddings_list)
-    ]
+    # 根据 encoding_format 转换 embeddings
+    encoding_format = request.encoding_format or "float"
+    
+    if encoding_format == "base64":
+        # 将 float list 转换为 base64 编码
+        encoded_embeddings = []
+        for emb in embeddings_list:
+            # 将 float list 打包为 bytes (使用 little-endian float32)
+            float_bytes = struct.pack(f'<{len(emb)}f', *emb)
+            # base64 编码
+            b64_str = base64.b64encode(float_bytes).decode('utf-8')
+            encoded_embeddings.append(b64_str)
+        
+        data = [
+            http.EmbeddingData(
+                object="embedding",
+                embedding=emb,
+                index=idx,
+            )
+            for idx, emb in enumerate(encoded_embeddings)
+        ]
+    else:
+        # float 格式（默认）
+        data = [
+            http.EmbeddingData(
+                object="embedding",
+                embedding=emb,
+                index=idx,
+            )
+            for idx, emb in enumerate(embeddings_list)
+        ]
 
     total_tokens = sum(seq_lengths)
     
