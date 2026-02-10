@@ -200,6 +200,15 @@ def start_server():
         help="模型权重和激活的数据类型 (默认: auto)"
     )
     
+    parser.add_argument(
+        "--quantization",
+        "-q",
+        type=str,
+        default=None,
+        choices=["awq_marlin"],
+        help="量化方法 (目前仅支持: awq_marlin)"
+    )
+    
     args = parser.parse_args()
     
     # 初始化 Engine（在启动服务器之前）
@@ -214,6 +223,8 @@ def start_server():
     print(f"注意力后端: {args.attn_backend}")
     print(f"数据类型: {args.dtype}")
     print(f"张量并行度: {args.tensor_parallel_size}")
+    if args.quantization:
+        print(f"量化方法: {args.quantization}")
     
     # 初始化 Engine
     print("正在初始化 Engine...")
@@ -221,7 +232,8 @@ def start_server():
         model_name=args.model,
         attn_backend=args.attn_backend, 
         tensor_parallel_size=args.tensor_parallel_size,
-        dtype=args.dtype
+        dtype=args.dtype,
+        quantization=args.quantization
     )
     print("Engine 初始化完成！")
     print()

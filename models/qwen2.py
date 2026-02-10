@@ -42,6 +42,9 @@ class Qwen2Attention(nn.Module):
         self.kv_size = self.num_kv_heads * self.head_dim
         self.scaling = self.head_dim**-0.5
         self.mes_config = mes_config
+        
+        # Get quantization config if available
+        quant_config = mes_config.quantization_config
 
         self.qkv_proj = QKVParallelLinear(
             hidden_size,
@@ -49,11 +52,13 @@ class Qwen2Attention(nn.Module):
             self.total_num_heads,
             self.total_num_kv_heads,
             bias=qkv_bias,
+            quant_config=quant_config,
         )
         self.o_proj = RowParallelLinear(
             self.total_num_heads * self.head_dim,
             hidden_size,
             bias=False,
+            quant_config=quant_config,
         )
         self.rotary_emb = get_rope(
             self.head_dim,
@@ -97,15 +102,21 @@ class Qwen2MLP(nn.Module):
     ) -> None:
         super().__init__()
         self.mes_config = mes_config
+        
+        # Get quantization config if available
+        quant_config = mes_config.quantization_config
+        
         self.gate_up_proj = MergedColumnParallelLinear(
             hidden_size,
             [intermediate_size] * 2,
             bias=False,
+            quant_config=quant_config,
         )
         self.down_proj = RowParallelLinear(
             intermediate_size,
             hidden_size,
             bias=False,
+            quant_config=quant_config,
         )
         assert hidden_act == "silu"
         self.act_fn = SiluAndMul()

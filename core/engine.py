@@ -8,10 +8,11 @@ import multiprocessing as mp
 from multiprocessing import Process, Queue as MPQueue
 from transformers import AutoConfig
 import socket
-
 from schemas import http
 from schemas.config import MESConfig
 from ultils.dtype_utils import get_torch_dtype, check_dtype_compatibility, dtype_to_string
+from core.tokenizer_manager import TokenizerManager
+from core.gpu_worker import GPUWorker
 
 # 设置多进程启动方法为 spawn（CUDA 要求）
 try:
@@ -20,17 +21,16 @@ except RuntimeError:
     # 如果已经设置过，忽略错误
     pass
 
-# 导入新的进程模块
-from core.tokenizer_manager import TokenizerManager
-from core.gpu_worker import GPUWorker
+
 
 
 class Engine:
-     def __init__(self, model_name, attn_backend="flash_attn", tensor_parallel_size=1, dtype="auto"):
+     def __init__(self, model_name, attn_backend="flash_attn", tensor_parallel_size=1, dtype="auto", quantization=None):
           self._model_name = model_name
           self._attn_backend = attn_backend  
           self._tensor_parallel_size = tensor_parallel_size
           self._dtype = dtype 
+          self._quantization = quantization
 
           # 多进程架构
           self._prepare_process = None        # Prepare 进程
@@ -79,6 +79,7 @@ class Engine:
           
           print(f"[Engine] Using dtype: {self._dtype}")
           
+          # 创建 MES 配置（内部会加载量化配置）
           mes_config = MESConfig(
                attn_backend=self._attn_backend,
                model_name=self._model_name,
@@ -86,6 +87,7 @@ class Engine:
                enable_monitoring=self._enable_monitoring,
                dtype=self._dtype,
                model_config=config,
+               quantization=self._quantization,  # 传入用户指定的量化方法
           )
           self._prepare_process = Process(
                target=TokenizerManager,
