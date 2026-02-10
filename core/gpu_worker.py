@@ -93,7 +93,7 @@ class GPUWorker:
         )
         self.model.eval()
         model_path = snapshot_download(self.model_name)
-        load_model(self.model, model_path)
+        load_model(self.model, model_path, self.mes_config.quantization_config)
         print(f"[GPUWorker] Model loaded successfully on {self.device} with dtype {dtype_to_string(torch_dtype)}")
 
 
